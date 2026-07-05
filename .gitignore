@@ -1,0 +1,29 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Credential / token files
+**/credentials.json
+**/credentials*.json
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/*.cer
+**/*.crt
+**/.env.local
+**/.env.*.local
+
+# Local runtime and package artifacts
+node_modules/
+dist/
+build/
+coverage/
+*.log
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
