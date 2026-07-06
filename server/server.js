@@ -15,6 +15,9 @@ if (process.env.GOOGLE_SHEET_ID) {
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.get("/api/health", (_req, res) => {
+    res.json({ ok: true, service: "booking-api" });
+});
 app.use("/api", bookingRoutes);
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {

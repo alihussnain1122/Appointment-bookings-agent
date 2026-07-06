@@ -6,24 +6,53 @@
 # Credential / token files
 **/credentials.json
 **/credentials*.json
+**/*service-account*.json
 **/*.pem
 **/*.key
 **/*.p12
 **/*.pfx
 **/*.cer
 **/*.crt
-**/.env.local
-**/.env.*.local
 
-# Local runtime and package artifacts
+# Node.js
 node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+*.egg-info/
+.eggs/
 dist/
 build/
+*.egg
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Voice agent runtime files
+*.wav
+input.wav
+
+# Local runtime artifacts
 coverage/
 *.log
+.cache/
 
-# OS/editor files
+# OS / editor
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
+*.swp
+*.swo

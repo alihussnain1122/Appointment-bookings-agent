@@ -1,0 +1,5 @@
+-r requirements.txt
+openai-whisper
+sounddevice
+scipy
+pyttsx3

@@ -105,7 +105,8 @@ export const setupSheet = async () => {
     try {
         await sheets.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests } });
     } catch (error) {
-        if (!error.message?.includes("banding already exists")) throw error;
+        const msg = error.message || "";
+        if (!msg.includes("banding") && !msg.includes("alternating background")) throw error;
         await sheets.spreadsheets.batchUpdate({
             spreadsheetId,
             requestBody: { requests: requests.filter((r) => !r.addBanding) },
