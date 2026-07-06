@@ -155,6 +155,40 @@ BOOKING_INTENT = (
     "book", "appointment", "schedule", "visit", "see the dentist",
     "dental appointment", "make an appointment",
 )
+CANCEL_INTENT = (
+    "cancel my appointment", "cancel the appointment", "cancel an appointment",
+    "cancel appointment", "cancellation", "call off my appointment",
+    "call off the appointment", "remove my appointment", "need to cancel",
+    "want to cancel", "cancel it", "cancel booking", "cancel my booking",
+)
+CANCEL_INTENT_LOOSE = ("cancel", "call off", "don't want", "dont want")
+NON_DENTAL_CANCEL = (
+    "wifi", "wi-fi", "internet", "netflix", "subscription", "membership",
+    "flight", "hotel", "order", "delivery", "uber", "ride",
+)
+WAIT_PHRASES = (
+    "give me a minute", "give me a moment", "one moment", "just a moment",
+    "hold on", "wait", "single minute", "a minute", "hang on",
+)
+CANCEL_FIELDS = ("name", "date", "time")
+CANCEL_ASK = {
+    "name": "Sure — what's the full name on the appointment?",
+    "date": "And what date was that appointment?",
+    "time": "What time was it — like 10 AM or 2 PM? Appointments are on the hour, nine to five.",
+}
+CANCEL_REPEAT = {
+    "name": "Sorry, I didn't catch the name — what's the full name on the booking?",
+    "date": "Sorry, I missed the date — which day was the appointment?",
+    "time": (
+        "Sorry, I didn't get the time. We're open 9 AM to 5 PM on the hour — "
+        "was it morning or afternoon, like 10 AM or 2 PM?"
+    ),
+}
+CANCEL_SILENCE = [
+    "Take your time — I'm here when you're ready to continue the cancellation.",
+    "No rush — just let me know the appointment details when you're ready.",
+    "I'm still here — shall we continue with the cancellation?",
+]
 AFFIRMATIVE = (
     "yes", "yeah", "yep", "sure", "please", "i would", "i'd like",
     "i would like", "correct", "that's right", "that is right",
@@ -285,6 +319,10 @@ def create_session_state() -> dict:
     return _empty_state()
 
 
+def _empty_cancel() -> dict:
+    return {"active": False, "name": None, "date": None, "time": None}
+
+
 def _empty_state() -> dict:
     return {
         "messages": [],
@@ -299,6 +337,8 @@ def _empty_state() -> dict:
             "awaiting_followup": False,
             "silence_count": 0,
         },
+        "cancel": _empty_cancel(),
+        "last_appointment": None,
     }
 
 
@@ -320,6 +360,27 @@ def _is_goodbye(text: str) -> bool:
 def _is_booking_intent(text: str) -> bool:
     lower = text.lower()
     return any(p in lower for p in BOOKING_INTENT)
+
+
+def _is_cancel_intent(text: str) -> bool:
+    lower = text.lower()
+    if any(w in lower for w in NON_DENTAL_CANCEL):
+        return False
+    if any(p in lower for p in CANCEL_INTENT):
+        return True
+    if any(p in lower for p in CANCEL_INTENT_LOOSE):
+        return any(
+            w in lower for w in (
+                "appointment", "booking", "visit", "dental", "dentist",
+                "slot", "schedule",
+            )
+        )
+    return False
+
+
+def _is_wait_request(text: str) -> bool:
+    lower = text.lower()
+    return any(p in lower for p in WAIT_PHRASES)
 
 
 def _is_affirmative(text: str) -> bool:
@@ -383,12 +444,23 @@ def _repeat_field(field: str) -> str:
     return _pick(REPEAT_PROMPTS[field])
 
 
-def _handle_silence(booking: dict) -> tuple[str, bool]:
+def _handle_silence(state: dict) -> tuple[str, bool]:
+    booking = state["booking"]
+    cancel = state.get("cancel", {})
     count = booking.get("silence_count", 0) + 1
     booking["silence_count"] = count
 
     if count > MAX_SILENCE_ATTEMPTS:
         return SILENCE_GOODBYE, True
+
+    if cancel.get("active"):
+        missing = _missing_cancel_field(cancel)
+        if missing == "time":
+            return CANCEL_REPEAT["time"], False
+        if missing:
+            return CANCEL_REPEAT.get(missing, CANCEL_SILENCE[0]), False
+        idx = min(count - 1, len(CANCEL_SILENCE) - 1)
+        return CANCEL_SILENCE[idx], False
 
     if booking.get("awaiting_followup"):
         return "Hello? Are you still there — is there anything else I can help with?", False
@@ -398,7 +470,7 @@ def _handle_silence(booking: dict) -> tuple[str, bool]:
         if missing:
             return _repeat_field(missing), False
 
-    return SILENCE_PROMPTS[count - 1], False
+    return SILENCE_PROMPTS[min(count - 1, len(SILENCE_PROMPTS) - 1)], False
 
 
 def _parse_service(text: str) -> str | None:
@@ -503,6 +575,90 @@ def _parse_time_raw(text: str) -> tuple[int, int] | None:
         minute = 0
 
     return hour, minute
+
+
+def _parse_time_loose_raw(text: str) -> tuple[int, int] | None:
+    parsed = _parse_time_raw(text)
+    if parsed:
+        return parsed
+    match = re.search(
+        r"\b(\d{1,2})\s+(\d{2})\s*(a\.?\s*m\.?|p\.?\s*m\.?)?",
+        text,
+        re.IGNORECASE,
+    )
+    if not match:
+        return None
+    hour = int(match.group(1))
+    minute = int(match.group(2))
+    if match.group(3):
+        meridiem = _normalize_meridiem(match.group(3))
+        if meridiem == "pm" and hour < 12:
+            hour += 12
+        if meridiem == "am" and hour == 12:
+            hour = 0
+    return hour, minute
+
+
+def _parse_time_for_cancel(text: str) -> str | None:
+    """Lenient time parsing for cancellations — handles common speech errors."""
+    parsed = _parse_time_loose_raw(text)
+    if not parsed:
+        return None
+
+    hour, minute = parsed
+    if minute != 0:
+        # Speech-to-text often doubles the hour: "10 10" means 10:00
+        if minute == hour and hour <= 12:
+            minute = 0
+        else:
+            return None
+
+    if CLINIC_OPEN_HOUR <= hour <= CLINIC_CLOSE_HOUR:
+        return f"{hour:02d}:00"
+
+    # 10 PM / 9 PM often means 10 AM / 9 AM in dental context
+    if hour >= 20:
+        morning = hour - 12
+        if CLINIC_OPEN_HOUR <= morning <= CLINIC_CLOSE_HOUR:
+            return f"{morning:02d}:00"
+
+    return None
+
+
+def _cancel_time_candidates(text: str) -> list[str]:
+    """Build time candidates for API lookup, including AM/PM corrections."""
+    candidates = []
+    primary = _parse_time_for_cancel(text)
+    if primary:
+        candidates.append(primary)
+
+    parsed = _parse_time_loose_raw(text)
+    if parsed:
+        hour, minute = parsed
+        if minute == 0 and CLINIC_OPEN_HOUR <= hour <= CLINIC_CLOSE_HOUR:
+            slot = f"{hour:02d}:00"
+            if slot not in candidates:
+                candidates.append(slot)
+
+    return candidates
+
+
+def _parse_name(text: str) -> str | None:
+    patterns = (
+        r"(?:appointment )?name (?:was|is)\s+([A-Za-z][A-Za-z'. -]{0,48}[A-Za-z])",
+        r"(?:under the name|booked (?:under|for)|for)\s+"
+        r"([A-Za-z][A-Za-z'. -]{0,48}[A-Za-z])",
+        r"(?:i'?m|i am)\s+([A-Za-z][A-Za-z'. -]{0,48}[A-Za-z])",
+        r"appointment (?:for|under)\s+([A-Za-z][A-Za-z'. -]{0,48}[A-Za-z])",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            return match.group(1).strip().title()
+
+    if _looks_like_name(text):
+        return text.strip().title()
+    return None
 
 
 def _parse_time(text: str) -> str | None:
@@ -632,6 +788,133 @@ def _format_slot(date: str, time_val: str) -> str:
         return f"{date} at {time_val}"
 
 
+def _apply_user_to_cancel(user_input: str, cancel: dict) -> None:
+    name = _parse_name(user_input)
+    if name:
+        cancel["name"] = name
+
+    date = _parse_date(user_input)
+    if date:
+        cancel["date"] = date
+
+    for time_val in _cancel_time_candidates(user_input):
+        cancel["time"] = time_val
+        break
+
+
+def _cancel_prompt(missing: str, user_input: str, cancel: dict, before: dict) -> str:
+    if not user_input.strip():
+        return CANCEL_REPEAT[missing]
+
+    intent_only = (
+        _is_cancel_intent(user_input)
+        and not _parse_name(user_input)
+        and not _parse_date(user_input)
+        and not _cancel_time_candidates(user_input)
+    )
+    if intent_only:
+        return CANCEL_ASK[missing]
+
+    if any(before.get(f) != cancel.get(f) for f in CANCEL_FIELDS if f != missing):
+        name = cancel.get("name", "")
+        if missing == "date" and name:
+            return f"Thanks, {name}. {CANCEL_ASK['date']}"
+        if missing == "time":
+            return CANCEL_ASK["time"]
+
+    if missing == "time":
+        if _parse_time_loose_raw(user_input) and not _parse_time_for_cancel(user_input):
+            return CANCEL_REPEAT["time"]
+
+    if missing == "name" and user_input.strip() and not _parse_name(user_input):
+        return CANCEL_REPEAT["name"]
+    if missing == "date" and user_input.strip() and not _parse_date(user_input):
+        return CANCEL_REPEAT["date"]
+
+    return CANCEL_ASK[missing]
+
+
+def _try_cancel_api(name: str, date: str, time_val: str) -> dict:
+    return json.loads(api_cancel(name, date, time_val))
+
+
+def _missing_cancel_field(cancel: dict) -> str | None:
+    for field in CANCEL_FIELDS:
+        if not cancel.get(field):
+            return field
+    return None
+
+
+def _prefill_cancel(cancel: dict, state: dict) -> None:
+    booking = state.get("booking", {})
+    last = state.get("last_appointment") or {}
+    for field in CANCEL_FIELDS:
+        if not cancel.get(field):
+            if booking.get(field):
+                cancel[field] = booking[field]
+            elif last.get(field):
+                cancel[field] = last[field]
+
+
+def _cancel_success_message(cancel: dict) -> str:
+    name = cancel.get("name", "")
+    slot = _format_slot(cancel.get("date", ""), cancel.get("time", ""))
+    if name:
+        return f"Done, {name} — I've cancelled your appointment on {slot}. Anything else I can help with?"
+    return f"Done — I've cancelled your appointment on {slot}. Anything else I can help with?"
+
+
+def _orchestrate_cancel(user_input: str, state: dict) -> tuple[str, bool] | None:
+    """Deterministic cancellation — uses last booked appointment when available."""
+    cancel = state.setdefault("cancel", _empty_cancel())
+
+    if not cancel.get("active"):
+        if not _is_cancel_intent(user_input):
+            return None
+        cancel["active"] = True
+        _prefill_cancel(cancel, state)
+
+    before = {field: cancel.get(field) for field in CANCEL_FIELDS}
+    _apply_user_to_cancel(user_input, cancel)
+
+    missing = _missing_cancel_field(cancel)
+    if missing:
+        return _cancel_prompt(missing, user_input, cancel, before), False
+
+    name, date = cancel["name"], cancel["date"]
+    time_options = [cancel["time"]]
+    for extra in _cancel_time_candidates(user_input):
+        if extra not in time_options:
+            time_options.append(extra)
+
+    last_error = "I couldn't find that appointment"
+    for time_val in time_options:
+        result = _try_cancel_api(name, date, time_val)
+        if result.get("success"):
+            cancel["time"] = time_val
+            state["cancel"] = _empty_cancel()
+            booking = state.get("booking", {})
+            booking.update({
+                "booked": False,
+                "awaiting_followup": False,
+                "active": False,
+                "name": None,
+                "service": None,
+                "date": None,
+                "time": None,
+            })
+            state["last_appointment"] = None
+            return _cancel_success_message(cancel), False
+        last_error = result.get("message") or result.get("error") or last_error
+
+    cancel["time"] = None
+    slot = _format_slot(date, time_options[0]) if time_options else date
+    return (
+        f"Sorry, I couldn't find an appointment for {name} on {slot}. "
+        "Could you double-check the date and time? We book on the hour, 9 AM to 5 PM."
+    ), False
+
+
 def _followup_message(booking: dict) -> str:
     name = booking.get("name", "")
     svc = _spoken_service(booking.get("service", "your appointment"))
@@ -652,6 +935,9 @@ def _orchestrate_booking(user_input: str, state: dict) -> tuple[str, bool] | Non
     booking = state.get("booking", {})
 
     if booking.get("awaiting_followup"):
+        return None
+
+    if state.get("cancel", {}).get("active"):
         return None
 
     if not booking.get("active"):
@@ -702,6 +988,12 @@ def _orchestrate_booking(user_input: str, state: dict) -> tuple[str, bool] | Non
         msg = result.get("message") or result.get("error") or "something went wrong on my end"
         return f"Oh dear, {msg} — shall we try a different time?", False
 
+    state["last_appointment"] = {
+        "name": booking["name"],
+        "date": booking["date"],
+        "time": booking["time"],
+        "service": booking["service"],
+    }
     return _followup_message(booking), False
 
 
@@ -787,6 +1079,9 @@ def _handle_followup(user_input: str, state: dict) -> tuple[str, bool] | None:
             name = booking.get("name", "")
             prefix = f"Thank you, {name}. " if name else ""
             return f"{prefix}Take care, and have a lovely day. Goodbye!", True
+        if _is_cancel_intent(user_input):
+            booking["awaiting_followup"] = False
+            return None
         booking["awaiting_followup"] = False
         booking["booked"] = False
         booking["active"] = False
@@ -808,7 +1103,7 @@ def run_agent(user_input: str, session_state: dict | None = None) -> tuple[str, 
 
     booking = state["booking"]
     if not user_input:
-        text, ended = _handle_silence(booking)
+        text, ended = _handle_silence(state)
         state["messages"].append(AIMessage(content=text))
         if ended:
             state["end_call"] = True
@@ -816,9 +1111,26 @@ def run_agent(user_input: str, session_state: dict | None = None) -> tuple[str, 
 
     booking["silence_count"] = 0
 
+    if _is_wait_request(user_input):
+        cancel = state.get("cancel", {})
+        if cancel.get("active"):
+            missing = _missing_cancel_field(cancel)
+            if missing:
+                return (
+                    f"Of course, take your time. When you're ready — {CANCEL_ASK[missing].lower()}"
+                ), False
+        return "Of course, take your time — I'm right here.", False
+
     followup = _handle_followup(user_input, state)
     if followup:
         text, ended = followup
+        return _sanitize(text), ended
+
+    cancelled = _orchestrate_cancel(user_input, state)
+    if cancelled:
+        text, ended = cancelled
+        state["messages"].append(HumanMessage(content=user_input))
+        state["messages"].append(AIMessage(content=text))
         return _sanitize(text), ended
 
     orchestrated = _orchestrate_booking(user_input, state)

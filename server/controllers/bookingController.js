@@ -118,8 +118,9 @@ export const cancelAppointment = async (req, res) => {
             if (!slot.valid) {
                 return res.status(400).json({ message: slot.message });
             }
+            const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
             appointment = await Appointment.findOne({
-                name,
+                name: { $regex: new RegExp(`^${escaped}$`, "i") },
                 date,
                 time: slot.normalizedTime,
                 status: { $ne: "cancelled" },
