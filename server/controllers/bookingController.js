@@ -38,9 +38,11 @@ export const checkAvailability = async (req, res) => {
 
 export const bookAppointment = async (req, res) => {
     try {
-        const { name, doctor, date, time } = req.body;
-        if (!name || !doctor || !date || !time) {
-            return res.status(400).json({ message: "name, doctor, date, and time are required" });
+        const { name, doctor, date, time, service } = req.body;
+        if (!name || !doctor || !date || !time || !service) {
+            return res.status(400).json({
+                message: "name, doctor, date, time, and service are required",
+            });
         }
 
         const slot = validateSlotTime(time);
@@ -59,6 +61,7 @@ export const bookAppointment = async (req, res) => {
         const appointment = await Appointment.create({
             name,
             doctor,
+            service,
             date,
             time: slot.normalizedTime,
         });
@@ -68,6 +71,7 @@ export const bookAppointment = async (req, res) => {
                 await addToSheet({
                     name,
                     doctor,
+                    service,
                     date,
                     time: slot.normalizedTime,
                     status: "Booked",
@@ -80,7 +84,14 @@ export const bookAppointment = async (req, res) => {
         res.json({
             message: "Appointment booked successfully",
             slotDurationMinutes: 60,
-            appointment,
+            appointment: {
+                name: appointment.name,
+                doctor: appointment.doctor,
+                service: appointment.service,
+                date: appointment.date,
+                time: appointment.time,
+                status: appointment.status,
+            },
         });
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -89,11 +100,24 @@ export const bookAppointment = async (req, res) => {
 
 export const cancelAppointment = async (req, res) => {
     try {
-        const { id } = req.body;
-        if (!id) {
-            return res.status(400).json({ message: "id is required" });
+        const { id, name, date, time } = req.body;
+
+        let appointment = null;
+        if (id) {
+            appointment = await Appointment.findById(id);
+        } else if (name && date && time) {
+            appointment = await Appointment.findOne({
+                name,
+                date,
+                time,
+                status: { $ne: "cancelled" },
+            });
+        } else {
+            return res.status(400).json({
+                message: "Provide appointment id, or name with date and time to cancel",
+            });
         }
-        const appointment = await Appointment.findById(id);
+
         if (!appointment) {
             return res.status(404).json({ message: "Not found" });
         }
@@ -102,7 +126,16 @@ export const cancelAppointment = async (req, res) => {
         }
         appointment.status = "cancelled";
         await appointment.save();
-        res.json({ message: "Appointment cancelled", appointment });
+        res.json({
+            message: "Appointment cancelled",
+            appointment: {
+                name: appointment.name,
+                service: appointment.service,
+                date: appointment.date,
+                time: appointment.time,
+                status: appointment.status,
+            },
+        });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }

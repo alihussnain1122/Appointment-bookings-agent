@@ -3,3 +3,6 @@ requests
 langchain-groq
 langchain-core
 langgraph
+fastapi
+uvicorn[standard]
+websockets

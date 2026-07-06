@@ -40,9 +40,11 @@ build/
 .mypy_cache/
 .ruff_cache/
 
-# Voice agent runtime files
-*.wav
-input.wav
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+
 
 # Local runtime artifacts
 coverage/

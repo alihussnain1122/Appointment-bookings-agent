@@ -32,3 +32,9 @@ def transcribe_audio():
     model = init_whisper()
     result = model.transcribe(AUDIO_FILE, fp16=False)
     return result.get("text", "")
+
+
+def transcribe_file(path: str) -> str:
+    model = init_whisper()
+    result = model.transcribe(path, fp16=False)
+    return result.get("text", "").strip()

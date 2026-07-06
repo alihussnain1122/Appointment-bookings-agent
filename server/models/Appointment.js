@@ -3,6 +3,7 @@ const appointmentSchema = new mongoose.Schema(
     {
         name: String,
         doctor: String,
+        service: String,
         date: String,
         time: String,
         status: { type: String, default: "booked" }

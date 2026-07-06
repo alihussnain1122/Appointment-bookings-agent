@@ -1,8 +1,17 @@
 import { google } from "googleapis";
 
 const SHEET_NAME = "Sheet1";
-const HEADERS = ["Patient Name", "Doctor", "Appointment Date", "Time", "Status", "Booked At"];
-const COLUMN_WIDTHS = [160, 150, 130, 90, 110, 180];
+const HEADERS = [
+    "Patient Name",
+    "Service",
+    "Doctor",
+    "Appointment Date",
+    "Time",
+    "Status",
+    "Booked At",
+];
+const COLUMN_WIDTHS = [160, 180, 150, 130, 90, 110, 180];
+const COLUMN_COUNT = HEADERS.length;
 
 const auth = new google.auth.GoogleAuth({
     keyFile: "config/credentials.json",
@@ -17,34 +26,40 @@ const getSheetId = async (spreadsheetId) => {
     return sheet.properties.sheetId;
 };
 
+const colLetter = (index) => String.fromCharCode(65 + index);
+
 export const setupSheet = async () => {
     const spreadsheetId = process.env.GOOGLE_SHEET_ID;
     if (!spreadsheetId) return;
 
     const sheetId = await getSheetId(spreadsheetId);
+    const lastCol = colLetter(COLUMN_COUNT - 1);
     const current = await sheets.spreadsheets.values.get({
         spreadsheetId,
-        range: `${SHEET_NAME}!A1:F1`,
+        range: `${SHEET_NAME}!A1:${lastCol}1`,
     });
     const firstCell = current.data.values?.[0]?.[0];
+    const headerRow = current.data.values?.[0]?.join("|");
 
-    if (firstCell !== HEADERS[0]) {
-        await sheets.spreadsheets.batchUpdate({
-            spreadsheetId,
-            requestBody: {
-                requests: [{
-                    insertDimension: {
-                        range: { sheetId, dimension: "ROWS", startIndex: 0, endIndex: 1 },
-                        inheritFromBefore: false,
-                    },
-                }],
-            },
-        });
+    if (firstCell !== HEADERS[0] || headerRow !== HEADERS.join("|")) {
+        if (firstCell && firstCell !== HEADERS[0]) {
+            await sheets.spreadsheets.batchUpdate({
+                spreadsheetId,
+                requestBody: {
+                    requests: [{
+                        insertDimension: {
+                            range: { sheetId, dimension: "ROWS", startIndex: 0, endIndex: 1 },
+                            inheritFromBefore: false,
+                        },
+                    }],
+                },
+            });
+        }
     }
 
     await sheets.spreadsheets.values.update({
         spreadsheetId,
-        range: `${SHEET_NAME}!A1:F1`,
+        range: `${SHEET_NAME}!A1:${lastCol}1`,
         valueInputOption: "USER_ENTERED",
         requestBody: { values: [HEADERS] },
     });
@@ -52,7 +67,13 @@ export const setupSheet = async () => {
     const requests = [
         {
             repeatCell: {
-                range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 6 },
+                range: {
+                    sheetId,
+                    startRowIndex: 0,
+                    endRowIndex: 1,
+                    startColumnIndex: 0,
+                    endColumnIndex: COLUMN_COUNT,
+                },
                 cell: {
                     userEnteredFormat: {
                         backgroundColor: { red: 0.12, green: 0.31, blue: 0.55 },
@@ -92,7 +113,13 @@ export const setupSheet = async () => {
         {
             addBanding: {
                 bandedRange: {
-                    range: { sheetId, startRowIndex: 1, endRowIndex: 1000, startColumnIndex: 0, endColumnIndex: 6 },
+                    range: {
+                        sheetId,
+                        startRowIndex: 1,
+                        endRowIndex: 1000,
+                        startColumnIndex: 0,
+                        endColumnIndex: COLUMN_COUNT,
+                    },
                     rowProperties: {
                         firstBandColor: { red: 1, green: 1, blue: 1 },
                         secondBandColor: { red: 0.93, green: 0.96, blue: 0.99 },
@@ -127,13 +154,15 @@ export const setupSheet = async () => {
 };
 
 export const addToSheet = async (data) => {
+    const lastCol = colLetter(COLUMN_COUNT - 1);
     await sheets.spreadsheets.values.append({
         spreadsheetId: process.env.GOOGLE_SHEET_ID,
-        range: `${SHEET_NAME}!A:F`,
+        range: `${SHEET_NAME}!A:${lastCol}`,
         valueInputOption: "USER_ENTERED",
         requestBody: {
             values: [[
                 data.name,
+                data.service,
                 data.doctor,
                 data.date,
                 data.time,

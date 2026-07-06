@@ -28,15 +28,36 @@ def check_availability(date: str, time: str) -> str:
     )
 
 
-def book_appointment(name: str, date: str, time: str) -> str:
-    return _post(
+def book_appointment(name: str, service: str, date: str, time: str) -> str:
+    raw = _post(
         "/book",
-        {"name": name, "doctor": DEFAULT_DOCTOR, "date": date, "time": time},
+        {
+            "name": name,
+            "doctor": DEFAULT_DOCTOR,
+            "service": service,
+            "date": date,
+            "time": time,
+        },
     )
+    data = json.loads(raw)
+    if data.get("success") and data.get("appointment"):
+        appt = data["appointment"]
+        return json.dumps({
+            "success": True,
+            "message": data.get("message"),
+            "appointment": {
+                "name": appt.get("name"),
+                "service": appt.get("service"),
+                "date": appt.get("date"),
+                "time": appt.get("time"),
+                "status": appt.get("status"),
+            },
+        })
+    return raw
 
 
-def cancel_appointment(appointment_id: str) -> str:
-    return _post("/cancel", {"id": appointment_id})
+def cancel_appointment(name: str, date: str, time: str) -> str:
+    return _post("/cancel", {"name": name, "date": date, "time": time})
 
 
 def health_check() -> str:
