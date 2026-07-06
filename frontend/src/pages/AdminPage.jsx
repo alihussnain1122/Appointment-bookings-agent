@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { useAdminMonitor } from "../hooks/useAdminMonitor";
+import { useAdmin } from "../context/AdminProvider";
 
 const CLINIC_NAME = import.meta.env.VITE_CLINIC_NAME || "Smile Dental Clinic";
 
@@ -14,8 +14,14 @@ export default function AdminPage() {
     setSelectedCallId,
     selectedTranscript,
     connect,
+    disconnect,
     endCall,
-  } = useAdminMonitor(pin);
+    savedPin,
+  } = useAdmin();
+
+  useEffect(() => {
+    if (savedPin && !pin) setPin(savedPin);
+  }, [savedPin, pin]);
 
   return (
     <div className="page">
@@ -28,9 +34,16 @@ export default function AdminPage() {
               <p>Monitor live calls and end them when needed</p>
             </div>
           </div>
-          <Link to="/" className="button secondary">
-            Patient view
-          </Link>
+          <div className="toolbar" style={{ margin: 0 }}>
+            <Link to="/" className="button secondary">
+              Patient view
+            </Link>
+            {connected && (
+              <button className="button secondary" onClick={disconnect}>
+                Logout
+              </button>
+            )}
+          </div>
         </header>
 
         {!connected ? (
@@ -46,9 +59,9 @@ export default function AdminPage() {
                 placeholder="Admin PIN"
                 value={pin}
                 onChange={(e) => setPin(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && connect()}
+                onKeyDown={(e) => e.key === "Enter" && connect(pin)}
               />
-              <button className="button" onClick={connect}>
+              <button className="button" onClick={() => connect(pin)}>
                 Connect
               </button>
             </div>
@@ -63,7 +76,10 @@ export default function AdminPage() {
             <section className="card admin-list">
               <h2>Active calls ({calls.length})</h2>
               {calls.length === 0 && (
-                <p className="empty">No active calls right now.</p>
+                <p className="empty">
+                  No active calls. When a patient starts a call, it will appear
+                  here automatically.
+                </p>
               )}
               {calls.map((call) => (
                 <button

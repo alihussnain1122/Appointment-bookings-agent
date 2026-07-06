@@ -101,27 +101,23 @@ async def websocket_call(websocket: WebSocket):
 
             if data.get("type") == "message":
                 user_text = (data.get("text") or "").strip()
-                if not user_text:
-                    await websocket.send_json(
-                        {
-                            "type": "agent_response",
-                            "text": "Sorry, I didn't catch that. Could you say that again?",
-                        }
-                    )
-                    continue
 
-                await call_manager.add_transcript(session.id, "caller", user_text)
+                if user_text:
+                    await call_manager.add_transcript(session.id, "caller", user_text)
 
                 loop = asyncio.get_event_loop()
-                response = await loop.run_in_executor(
+                response, should_end = await loop.run_in_executor(
                     None,
-                    lambda: run_agent(user_text, session.agent_state),
+                    lambda text=user_text: run_agent(text, session.agent_state),
                 )
 
                 await call_manager.add_transcript(session.id, "agent", response)
                 await websocket.send_json(
-                    {"type": "agent_response", "text": response}
+                    {"type": "agent_response", "text": response, "endCall": should_end}
                 )
+
+                if should_end:
+                    continue
 
             elif data.get("type") == "audio":
                 if WHISPER_LOADING:
@@ -135,26 +131,33 @@ async def websocket_call(websocket: WebSocket):
 
                 user_text = await transcribe_web_audio(data["audio"])
                 if not user_text:
-                    await websocket.send_json(
-                        {
-                            "type": "agent_response",
-                            "text": "Sorry, I didn't catch that. Could you say that again?",
-                        }
+                    loop = asyncio.get_event_loop()
+                    response, should_end = await loop.run_in_executor(
+                        None,
+                        lambda: run_agent("", session.agent_state),
                     )
-                    continue
+                    await call_manager.add_transcript(session.id, "agent", response)
+                    await websocket.send_json(
+                        {"type": "agent_response", "text": response, "endCall": should_end}
+                    )
+                    if should_end:
+                        continue
 
                 await call_manager.add_transcript(session.id, "caller", user_text)
 
                 loop = asyncio.get_event_loop()
-                response = await loop.run_in_executor(
+                response, should_end = await loop.run_in_executor(
                     None,
-                    lambda: run_agent(user_text, session.agent_state),
+                    lambda text=user_text: run_agent(text, session.agent_state),
                 )
 
                 await call_manager.add_transcript(session.id, "agent", response)
                 await websocket.send_json(
-                    {"type": "agent_response", "text": response}
+                    {"type": "agent_response", "text": response, "endCall": should_end}
                 )
+
+                if should_end:
+                    continue
 
             elif data.get("type") == "hangup":
                 await call_manager.end_session(session.id, "caller_hangup")

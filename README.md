@@ -38,8 +38,15 @@ Open `http://localhost:5173`
 
 ## Pages
 
-- **Patient call:** `http://localhost:5173/` — click **Call** to talk with Maya and book an appointment
-- **Admin:** `http://localhost:5173/admin` — enter PIN (default `1234`), listen to live transcripts, **End call**
+- **Patient call:** `http://localhost:5173/` — click **Call** to talk with Maya
+- **Admin:** `http://localhost:5173/admin` — PIN default `1234`, monitor live calls, **End call**
+
+## Important behavior
+
+- **Calls stay active** when switching between patient and admin views (same browser tab)
+- A green **Call in progress** banner appears on admin while a patient call is active
+- Admin auto-reconnects if you logged in before (PIN saved in session)
+- Use **Logout** on admin to disconnect monitoring
 
 ## Environment
 
@@ -47,8 +54,6 @@ Copy examples and fill in secrets:
 - `server/.env.example` → `server/.env`
 - `ai-agent/.env.example` → `ai-agent/.env`
 - `frontend/.env.example` → `frontend/.env`
-
-Set `ADMIN_PIN` in `ai-agent/.env` for admin dashboard access.
 
 ## CLI voice agent (optional)
 

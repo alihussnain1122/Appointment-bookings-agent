@@ -1,6 +1,8 @@
 const SpeechRecognition =
   window.SpeechRecognition || window.webkitSpeechRecognition;
 
+const LISTEN_TIMEOUT_MS = 12000;
+
 export function isSpeechSupported() {
   return Boolean(SpeechRecognition) && "speechSynthesis" in window;
 }
@@ -35,7 +37,7 @@ export function speak(text) {
   });
 }
 
-export function listenOnce() {
+export function listenOnce(timeoutMs = LISTEN_TIMEOUT_MS) {
   return new Promise((resolve, reject) => {
     if (!SpeechRecognition) {
       reject(new Error("Speech recognition is not supported in this browser."));
@@ -46,22 +48,51 @@ export function listenOnce() {
     recognition.lang = "en-US";
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
+    recognition.continuous = false;
 
-    recognition.onresult = (event) => {
-      const text = event.results[0][0].transcript.trim();
+    let settled = false;
+
+    const finish = (text) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try {
+        recognition.stop();
+      } catch {
+        // ignore if recognition already stopped
+      }
       resolve(text);
     };
 
-    recognition.onerror = (event) => {
-      if (event.error === "no-speech") {
-        resolve("");
-        return;
-      }
-      reject(new Error(event.error));
+    const timer = setTimeout(() => finish(""), timeoutMs);
+
+    recognition.onresult = (event) => {
+      const text = event.results[0]?.[0]?.transcript?.trim() || "";
+      finish(text);
     };
 
-    recognition.onend = () => {};
-    recognition.start();
+    recognition.onerror = (event) => {
+      if (event.error === "no-speech" || event.error === "aborted") {
+        finish("");
+        return;
+      }
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        reject(new Error(event.error));
+      }
+    };
+
+    recognition.onend = () => {
+      if (!settled) finish("");
+    };
+
+    try {
+      recognition.start();
+    } catch (error) {
+      clearTimeout(timer);
+      reject(error);
+    }
   });
 }
 

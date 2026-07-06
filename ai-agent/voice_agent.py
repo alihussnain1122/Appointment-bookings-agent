@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from agent.agent import reset_conversation, run_agent
+from call_manager import greeting_text
 from tools.api_tools import health_check
 from voice.input import init_whisper, record_audio, transcribe_audio
 from voice.output import init_voice, speak
@@ -14,12 +15,39 @@ from voice.output import init_voice, speak
 CLINIC_NAME = os.getenv("CLINIC_NAME", "Smile Dental Clinic")
 
 
-def greeting():
-    return (
-        f"Hi there! Welcome to {CLINIC_NAME}. "
-        "I'm Maya, and I'd be happy to help you schedule your visit. "
-        "Are you looking to book an appointment today?"
-    )
+def run_call():
+    """Handle a single call: greet, then listen and respond until it ends."""
+    reset_conversation()
+    greeting = greeting_text()
+    print("AI:", greeting)
+    speak(greeting)
+
+    while True:
+        print("Listening...")
+        has_speech = record_audio()
+
+        if not has_speech:
+            response, should_end = run_agent("")
+            if response:
+                print("AI:", response)
+                speak(response)
+            if should_end:
+                print("\nCall ended.\n")
+                return
+            continue
+
+        user_text = transcribe_audio().strip()
+        if not user_text:
+            continue
+
+        print("You:", user_text)
+        response, should_end = run_agent(user_text)
+        print("AI:", response)
+        speak(response)
+
+        if should_end:
+            print("\nCall ended.\n")
+            return
 
 
 def main():
@@ -31,30 +59,20 @@ def main():
         sys.exit(1)
 
     print("Backend connected:", health)
-    reset_conversation()
-
     init_voice()
-    speak(greeting())
-
-    print("\nLoading speech recognition (first run may take a moment)...")
+    print("Loading speech recognition (first run may take a moment)...")
     init_whisper()
-    print("Ready. Speak when you see 'Recording...'\n")
+    print(f"\n{CLINIC_NAME} voice agent is live. (Ctrl+C to stop)\n")
 
     while True:
         try:
-            speak("I'm listening.")
-            record_audio()
-            user_text = transcribe_audio().strip()
-            if not user_text:
-                speak("Sorry, I didn't catch that. Could you say that again?")
-                continue
-
-            print("You:", user_text)
-            response = run_agent(user_text)
-            speak(response)
+            run_call()
         except KeyboardInterrupt:
-            print("\nExiting...")
-            speak("Thank you for calling. Have a wonderful day!")
+            print("\nShutting down...")
+            try:
+                speak("Thank you for calling. Have a wonderful day!")
+            except Exception:
+                pass
             break
 
 

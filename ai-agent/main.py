@@ -18,8 +18,11 @@ def main():
             continue
         if user_input.lower() in {"exit", "quit"}:
             break
-        response = run_agent(user_input)
+        response, should_end = run_agent(user_input)
         print("AI:", response, "\n")
+        if should_end:
+            print("(Call ended)")
+            break
 
 
 if __name__ == "__main__":

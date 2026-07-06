@@ -13,9 +13,9 @@ CLINIC_NAME = os.getenv("CLINIC_NAME", "Smile Dental Clinic")
 
 def greeting_text() -> str:
     return (
-        f"Hi there! Welcome to {CLINIC_NAME}. "
-        "I'm Maya, and I'd be happy to help you schedule your visit. "
-        "Are you looking to book an appointment today?"
+        f"Hi there! You've reached {CLINIC_NAME}. "
+        "I'm Maya — how can I help you today? "
+        "Are you looking to book an appointment?"
     )
 
 

@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { useVoiceCall } from "../hooks/useVoiceCall";
+import { useCall } from "../context/CallProvider";
 
 const CLINIC_NAME = import.meta.env.VITE_CLINIC_NAME || "Smile Dental Clinic";
 
@@ -13,7 +13,7 @@ export default function CallPage() {
     startCall,
     endCall,
     isLive,
-  } = useVoiceCall();
+  } = useCall();
 
   const statusLabel =
     status === "idle"
@@ -64,11 +64,15 @@ export default function CallPage() {
             )}
 
             <p className="hint">
-              Tap call and allow microphone access. Maya will guide you step by
-              step to book your appointment.
+              Tap call and allow microphone access. Maya will greet you first,
+              then listen for your reply.
             </p>
 
-            {error && <p className="hint" style={{ color: "var(--danger)" }}>{error}</p>}
+            {error && (
+              <p className="hint" style={{ color: "var(--danger)" }}>
+                {error}
+              </p>
+            )}
             {!supported && (
               <p className="hint" style={{ color: "var(--danger)" }}>
                 Voice calling works best in Chrome or Edge.

@@ -155,20 +155,30 @@ export const setupSheet = async () => {
 
 export const addToSheet = async (data) => {
     const lastCol = colLetter(COLUMN_COUNT - 1);
-    await sheets.spreadsheets.values.append({
-        spreadsheetId: process.env.GOOGLE_SHEET_ID,
-        range: `${SHEET_NAME}!A:${lastCol}`,
-        valueInputOption: "USER_ENTERED",
-        requestBody: {
-            values: [[
-                data.name,
-                data.service,
-                data.doctor,
-                data.date,
-                data.time,
-                data.status,
-                new Date().toLocaleString(),
-            ]],
-        },
-    });
+    const row = [[
+        data.name,
+        data.service,
+        data.doctor,
+        data.date,
+        data.time,
+        data.status,
+        new Date().toLocaleString(),
+    ]];
+
+    let lastError;
+    for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+            await sheets.spreadsheets.values.append({
+                spreadsheetId: process.env.GOOGLE_SHEET_ID,
+                range: `${SHEET_NAME}!A:${lastCol}`,
+                valueInputOption: "USER_ENTERED",
+                requestBody: { values: row },
+            });
+            return;
+        } catch (error) {
+            lastError = error;
+            await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+        }
+    }
+    throw lastError;
 };

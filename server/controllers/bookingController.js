@@ -4,6 +4,7 @@ import {
     findConflictingAppointment,
     validateSlotTime,
 } from "../utils/slotUtils.js";
+import { withRetry } from "../utils/retry.js";
 
 const getActiveAppointments = (doctor, date) =>
     Appointment.find({ doctor, date, status: { $ne: "cancelled" } });
@@ -58,14 +59,19 @@ export const bookAppointment = async (req, res) => {
             });
         }
 
-        const appointment = await Appointment.create({
-            name,
-            doctor,
-            service,
-            date,
-            time: slot.normalizedTime,
-        });
+        const appointment = await withRetry(
+            () =>
+                Appointment.create({
+                    name,
+                    doctor,
+                    service,
+                    date,
+                    time: slot.normalizedTime,
+                }),
+            { label: "save appointment" }
+        );
 
+        let sheetSynced = false;
         if (process.env.GOOGLE_SHEET_ID) {
             try {
                 await addToSheet({
@@ -76,14 +82,16 @@ export const bookAppointment = async (req, res) => {
                     time: slot.normalizedTime,
                     status: "Booked",
                 });
+                sheetSynced = true;
             } catch (sheetError) {
-                console.error("Google Sheets sync failed:", sheetError.message);
+                console.error("Google Sheets sync failed after retries:", sheetError.message);
             }
         }
 
         res.json({
             message: "Appointment booked successfully",
             slotDurationMinutes: 60,
+            sheetSynced,
             appointment: {
                 name: appointment.name,
                 doctor: appointment.doctor,
@@ -106,10 +114,14 @@ export const cancelAppointment = async (req, res) => {
         if (id) {
             appointment = await Appointment.findById(id);
         } else if (name && date && time) {
+            const slot = validateSlotTime(time);
+            if (!slot.valid) {
+                return res.status(400).json({ message: slot.message });
+            }
             appointment = await Appointment.findOne({
                 name,
                 date,
-                time,
+                time: slot.normalizedTime,
                 status: { $ne: "cancelled" },
             });
         } else {

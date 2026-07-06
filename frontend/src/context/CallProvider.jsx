@@ -1,12 +1,22 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { isSpeechSupported, listenOnce, speak } from "../utils/speech";
 
 const WS_URL = import.meta.env.VITE_VOICE_WS_URL || "ws://localhost:8000/ws/call";
 
-export function useVoiceCall() {
+const CallContext = createContext(null);
+
+export function CallProvider({ children }) {
   const wsRef = useRef(null);
   const activeRef = useRef(false);
   const listeningRef = useRef(false);
+  const endingRef = useRef(false);
   const [status, setStatus] = useState("idle");
   const [callId, setCallId] = useState(null);
   const [transcript, setTranscript] = useState([]);
@@ -29,9 +39,7 @@ export function useVoiceCall() {
       if (!activeRef.current) return;
 
       if (!text) {
-        await speak("Sorry, I didn't catch that. Could you say that again?");
-        listeningRef.current = false;
-        listenAndSend();
+        wsRef.current?.send(JSON.stringify({ type: "message", text: "" }));
         return;
       }
 
@@ -47,12 +55,14 @@ export function useVoiceCall() {
   const endCall = useCallback(() => {
     activeRef.current = false;
     listeningRef.current = false;
+    endingRef.current = true;
     setStatus("ended");
     speechSynthesis.cancel();
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: "hangup" }));
       wsRef.current.close();
     }
+    wsRef.current = null;
   }, []);
 
   const startCall = useCallback(() => {
@@ -60,9 +70,12 @@ export function useVoiceCall() {
       setError("Please use Chrome or Edge for voice calling.");
       return;
     }
+    if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
     setError("");
     setTranscript([]);
+    setCallId(null);
+    endingRef.current = false;
     setStatus("connecting");
 
     const ws = new WebSocket(WS_URL);
@@ -78,21 +91,40 @@ export function useVoiceCall() {
 
       if (data.type === "connected") {
         setCallId(data.callId);
-        addLine("agent", data.greeting);
-        await speak(data.greeting);
+        if (data.greeting) {
+          addLine("agent", data.greeting);
+          await speak(data.greeting);
+        }
         listenAndSend();
       }
 
       if (data.type === "agent_response") {
         addLine("agent", data.text);
         await speak(data.text);
+        if (data.endCall) {
+          activeRef.current = false;
+          listeningRef.current = false;
+          endingRef.current = true;
+          setStatus("ended");
+          if (wsRef.current?.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({ type: "hangup" }));
+            wsRef.current.close();
+          }
+          wsRef.current = null;
+          return;
+        }
         listenAndSend();
       }
 
       if (data.type === "call_ended") {
         activeRef.current = false;
+        listeningRef.current = false;
         setStatus("ended");
-        speechSynthesis.cancel();
+        if (!endingRef.current) {
+          speechSynthesis.cancel();
+        }
+        endingRef.current = false;
+        wsRef.current = null;
         if (data.reason === "admin_ended") {
           await speak("This call has been ended by the clinic. Thank you for calling.");
         }
@@ -103,23 +135,30 @@ export function useVoiceCall() {
       setError("Could not connect to the clinic line. Is the voice server running?");
       setStatus("idle");
       activeRef.current = false;
+      wsRef.current = null;
     };
 
     ws.onclose = () => {
       activeRef.current = false;
-      setStatus((current) => (current === "active" ? "ended" : current));
+      listeningRef.current = false;
+      wsRef.current = null;
+      setStatus((current) =>
+        current === "active" || current === "connecting" ? "ended" : current
+      );
     };
   }, [addLine, listenAndSend, supported]);
 
   useEffect(() => {
-    return () => {
-      activeRef.current = false;
-      wsRef.current?.close();
-      speechSynthesis.cancel();
+    const onUnload = () => {
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: "hangup" }));
+      }
     };
+    window.addEventListener("beforeunload", onUnload);
+    return () => window.removeEventListener("beforeunload", onUnload);
   }, []);
 
-  return {
+  const value = {
     status,
     callId,
     transcript,
@@ -127,6 +166,14 @@ export function useVoiceCall() {
     supported,
     startCall,
     endCall,
-    isLive: status === "active",
+    isLive: status === "active" || status === "connecting",
   };
+
+  return <CallContext.Provider value={value}>{children}</CallContext.Provider>;
+}
+
+export function useCall() {
+  const ctx = useContext(CallContext);
+  if (!ctx) throw new Error("useCall must be used within CallProvider");
+  return ctx;
 }
