@@ -2,17 +2,6 @@ import pyttsx3
 
 _engine = None
 
-# Windows: Microsoft Zira | macOS: Samantha | Linux: often english-us or female
-PREFERRED_VOICE_KEYWORDS = (
-    "zira",
-    "samantha",
-    "karen",
-    "susan",
-    "female",
-    "en-us",
-    "english united states",
-)
-
 
 def _pick_female_us_voice(engine):
     voices = engine.getProperty("voices") or []
@@ -40,11 +29,11 @@ def _pick_female_us_voice(engine):
         print(f"Voice: {best.name}")
 
 
-def _get_engine():
+def init_voice():
     global _engine
     if _engine is None:
-        _engine = pyttsx3.init()
-        _engine.setProperty("rate", 165)
+        _engine = pyttsx3.init("sapi5")
+        _engine.setProperty("rate", 150)
         _engine.setProperty("volume", 1.0)
         _pick_female_us_voice(_engine)
     return _engine
@@ -54,6 +43,6 @@ def speak(text):
     if not text:
         return
     print("AI:", text)
-    engine = _get_engine()
+    engine = init_voice()
     engine.say(text)
     engine.runAndWait()

@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 BASE_URL = os.getenv("BACKEND_URL", "http://localhost:5000/api").rstrip("/")
+DEFAULT_DOCTOR = os.getenv("CLINIC_DOCTOR", "Dr. Smith")
 
 
 def _post(endpoint: str, payload: dict) -> str:
@@ -20,12 +21,18 @@ def _post(endpoint: str, payload: dict) -> str:
         return json.dumps({"success": False, "error": str(error)})
 
 
-def check_availability(doctor: str, date: str, time: str) -> str:
-    return _post("/check-availability", {"doctor": doctor, "date": date, "time": time})
+def check_availability(date: str, time: str) -> str:
+    return _post(
+        "/check-availability",
+        {"doctor": DEFAULT_DOCTOR, "date": date, "time": time},
+    )
 
 
-def book_appointment(name: str, doctor: str, date: str, time: str) -> str:
-    return _post("/book", {"name": name, "doctor": doctor, "date": date, "time": time})
+def book_appointment(name: str, date: str, time: str) -> str:
+    return _post(
+        "/book",
+        {"name": name, "doctor": DEFAULT_DOCTOR, "date": date, "time": time},
+    )
 
 
 def cancel_appointment(appointment_id: str) -> str:

@@ -1,6 +1,6 @@
 from dotenv import load_dotenv
 
-from agent.agent import run_agent
+from agent.agent import reset_conversation, run_agent
 from tools.api_tools import health_check
 
 load_dotenv()
@@ -9,6 +9,7 @@ load_dotenv()
 def main():
     health = health_check()
     print("Backend:", health)
+    reset_conversation()
     print("\nAI Booking Agent started (type 'exit' to quit)\n")
 
     while True:
